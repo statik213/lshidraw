@@ -1,24 +1,37 @@
 #define DEV_DIR "/dev/"
 #define HIDRAW_PREFIX  "hidraw"
+
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/hidraw.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <linux/hidraw.h>
 #include <linux/input.h>
 #include <linux/types.h>
 
-static void hex_dump(void *data, int size)
+struct Args {
+	int verbose;
+	int dumpDescriptors;
+};
+
+/**
+ * dumps size bytes of *data to stdout.
+ * Looks like:
+ * [prefix][0000] 75 6E 6B 6E 6F 77 6E 20
+ *                  30 FF 00 00 00 00 39 00 unknown 0.....9.
+ * (in a single line of course)
+ * @param data data to dumps
+ * @param prefix string to prefix each line
+ * @param size size of data
+ */
+static void hex_dump(void *data, const char * prefix, int size)
 {
-    /* dumps size bytes of *data to stdout. Looks like:
-     * [0000] 75 6E 6B 6E 6F 77 6E 20
-     *                  30 FF 00 00 00 00 39 00 unknown 0.....9.
-     * (in a single line of course)
-     */
 
     unsigned char *p = (unsigned char *)data;
     unsigned char c;
@@ -49,7 +62,7 @@ static void hex_dump(void *data, int size)
 
         if(n%16 == 0) {
             /* line completed */
-            printf("[%4.4s]   %-50.50s  %s\n", addrstr, hexstr, charstr);
+            printf("%s[%4.4s]   %-50.50s  %s\n", prefix, addrstr, hexstr, charstr);
             hexstr[0] = 0;
             charstr[0] = 0;
         } else if(n%8 == 0) {
@@ -62,11 +75,11 @@ static void hex_dump(void *data, int size)
 
     if (strlen(hexstr) > 0) {
         /* print rest of buffer if not empty */
-        printf("[%4.4s]   %-50.50s  %s\n", addrstr, hexstr, charstr);
+        printf("%s[%4.4s]   %-50.50s  %s\n", prefix, addrstr, hexstr, charstr);
     }
 }
 
-int ls(const char * path) {
+int ls(const char * path, struct Args * args) {
 	int rc, fd;
 	char name[128];
 	struct hidraw_devinfo info;
@@ -109,22 +122,67 @@ int ls(const char * path) {
 
 	printf("%s - ID %04x:%04x %s\n", path, (int)info.vendor, (int)info.product, name);
 
-	if (1) {
-		hex_dump(&descriptor, descriptor.size);
+	if (args->dumpDescriptors) {
+		printf("    - Descriptor Length: %d\n"
+			   "    - Descriptor:\n",
+						(int) descriptor.size);
+		hex_dump(&descriptor, "      ", descriptor.size);
 	}
 
 	close(fd);
 	return 0;
 }
 
-int main() {
-	DIR*    dev_dir = opendir(DEV_DIR);
+void printUsage(const char * name, int rc) {
+	printf("Usage: %s -dvh file1 file ... filen\n", name);
+	exit(rc);
+}
+
+int main(int argc, char* argv[]) {
+	DIR*    dev_dir;
+	struct Args args;
+	int i, c;
+
+	opterr = 0;
+	args.verbose = 1;
+	args.dumpDescriptors = 0;
+
+	while ((c = getopt(argc, argv, "dvh")) != -1) {
+		switch (c) {
+			case 'h':
+				printUsage(argv[1], 0);
+				break;
+
+			case 'd':
+				args.dumpDescriptors = 1;
+				break;
+
+			case 'v':
+				args.verbose++;
+				break;
+
+			case '?':
+			default:
+				printUsage(argv[1], 0);
+				break;
+		}
+	}
+
+	if (optind < argc) {
+		// list only specified files
+		for (i = optind; i < argc; i++) {
+			ls(argv[i], &args);
+		}
+		return 0;
+	}
+
+
+	dev_dir = opendir(DEV_DIR);
 	if (!dev_dir) {
-		return -1;
+		perror(DEV_DIR);
 	}
 
 	struct dirent*  ent;
-
 	while ( (ent = readdir(dev_dir)) != NULL ) {
 		char abspath[PATH_MAX] = "";
 		if (strncmp(ent->d_name, HIDRAW_PREFIX, strlen(HIDRAW_PREFIX)) != 0) {
@@ -133,7 +191,7 @@ int main() {
 
 		strcat(abspath, DEV_DIR);
 		strcat(abspath, ent->d_name);
-		ls(abspath);
+		ls(abspath, &args);
 	}
-
+	return 0;
 }
