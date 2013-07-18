@@ -1,11 +1,9 @@
 #define DEV_DIR "/dev/"
 #define HIDRAW_PREFIX  "hidraw"
 
-#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,64 +18,7 @@ struct Args {
 	int dumpDescriptors;
 };
 
-/**
- * dumps size bytes of *data to stdout.
- * Looks like:
- * [prefix][0000] 75 6E 6B 6E 6F 77 6E 20
- *                  30 FF 00 00 00 00 39 00 unknown 0.....9.
- * (in a single line of course)
- * @param data data to dumps
- * @param prefix string to prefix each line
- * @param size size of data
- */
-static void hex_dump(void *data, const char * prefix, int size)
-{
-
-    unsigned char *p = (unsigned char *)data;
-    unsigned char c;
-    int n;
-    char bytestr[4] = {0};
-    char addrstr[10] = {0};
-    char hexstr[ 16*3 + 5] = {0};
-    char charstr[16*1 + 5] = {0};
-    for(n=1;n<=size;n++) {
-        if (n%16 == 1) {
-            /* store address for this line */
-            unsigned int offset = ((uintptr_t)p-(uintptr_t)data);
-            snprintf(addrstr, sizeof(addrstr), "%.4x", offset);
-        }
-
-        c = *p;
-        if (!isprint(c)) {
-            c = '.';
-        }
-
-        /* store hex str (for left side) */
-        snprintf(bytestr, sizeof(bytestr), "%02X ", *p);
-        strncat(hexstr, bytestr, sizeof(hexstr)-strlen(hexstr)-1);
-
-        /* store char str (for right side) */
-        snprintf(bytestr, sizeof(bytestr), "%c", c);
-        strncat(charstr, bytestr, sizeof(charstr)-strlen(charstr)-1);
-
-        if(n%16 == 0) {
-            /* line completed */
-            printf("%s[%4.4s]   %-50.50s  %s\n", prefix, addrstr, hexstr, charstr);
-            hexstr[0] = 0;
-            charstr[0] = 0;
-        } else if(n%8 == 0) {
-            /* half line: add whitespaces */
-            strncat(hexstr, "  ", sizeof(hexstr)-strlen(hexstr)-1);
-            strncat(charstr, " ", sizeof(charstr)-strlen(charstr)-1);
-        }
-        p++; /* next byte */
-    }
-
-    if (strlen(hexstr) > 0) {
-        /* print rest of buffer if not empty */
-        printf("%s[%4.4s]   %-50.50s  %s\n", prefix, addrstr, hexstr, charstr);
-    }
-}
+extern void hex_dump(void *data, int size, int printAddr, const char * prefixFirst, const char * prefix);
 
 int ls(const char * path, struct Args * args) {
 	int rc, fd;
@@ -120,13 +61,13 @@ int ls(const char * path, struct Args * args) {
 		return -1;
 	}
 
-	printf("%s - ID %04x:%04x %s\n", path, (int)info.vendor, (int)info.product, name);
+	printf("%s - ID %04x:%04x %s\n", path, (int)info.vendor & 0xffff, (int)info.product & 0xffff, name);
 
 	if (args->dumpDescriptors) {
 		printf("    - Descriptor Length: %d\n"
 			   "    - Descriptor:\n",
 						(int) descriptor.size);
-		hex_dump(&descriptor, "      ", descriptor.size);
+		hex_dump(&descriptor, descriptor.size, 1, "      ", "      ");
 	}
 
 	close(fd);
