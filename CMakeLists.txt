@@ -11,8 +11,8 @@ endif()
 
 add_executable(lshidraw lshidraw.c hexdump.c)
 
-add_executable(dumphidraw dumphidraw.c hexdump.c)
+add_executable(dumpdev dumpdev.c hexdump.c)
 if (NOT ANDROID)
-	target_link_libraries(dumphidraw rt)
+	target_link_libraries(dumpdev rt)
 endif()
 
