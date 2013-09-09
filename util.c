@@ -2,7 +2,17 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
+extern double getTimestamp() {
+	struct timespec tp;
+	uint32_t result;
+
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+
+	return tp.tv_sec + (double) tp.tv_nsec * 1e-9;
+}
 
 /**
  * dumps size bytes of *data to stdout.

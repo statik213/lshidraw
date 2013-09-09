@@ -6,19 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 
-extern void hex_dump(void *data, int size, int addr, const char * prefixFirst, const char * prefix);
-
-double getTimestamp() {
-	struct timespec tp;
-	uint32_t result;
-
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-
-	return tp.tv_sec + (double) tp.tv_nsec * 1e-9;
-}
+#include "util.h"
 
 int main(int argc, char* argv[]) {
 	int rc, fd;
@@ -57,6 +47,12 @@ int main(int argc, char* argv[]) {
 			num++;
 
 			printf("#%-5d t: %5.3f dt: %5.4f len: %2d", num, now - start, now - previous, len);
+
+			if (len == 0) {
+				printf(" EOF\n");
+				return 0;
+			}
+
 			if (len <= 16) {
 				hex_dump(buffer, len, 0, " | ", "");
 			} else {

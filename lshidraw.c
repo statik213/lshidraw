@@ -13,6 +13,8 @@
 #include <linux/input.h>
 #include <linux/types.h>
 
+#include "util.h"
+
 struct Args {
 	int verbose;
 	int dumpDescriptors;
@@ -74,10 +76,6 @@ int ls(const char * path, struct Args * args) {
 	return 0;
 }
 
-void printUsage(const char * name, int rc) {
-	printf("Usage: %s -dvh file1 file ... filen\n", name);
-	exit(rc);
-}
 
 int main(int argc, char* argv[]) {
 	DIR*    dev_dir;
@@ -88,10 +86,11 @@ int main(int argc, char* argv[]) {
 	args.verbose = 1;
 	args.dumpDescriptors = 0;
 
+	int showUsage = 0;
 	while ((c = getopt(argc, argv, "dvh")) != -1) {
 		switch (c) {
 			case 'h':
-				printUsage(argv[1], 0);
+				showUsage = 1;
 				break;
 
 			case 'd':
@@ -104,9 +103,14 @@ int main(int argc, char* argv[]) {
 
 			case '?':
 			default:
-				printUsage(argv[1], 0);
+				showUsage = -1;
 				break;
 		}
+	}
+
+	if (showUsage) {
+		printf("Usage: %s -dvh file1 file ... filen\n", argv[0]);
+		return -1;
 	}
 
 	if (optind < argc) {
@@ -116,7 +120,6 @@ int main(int argc, char* argv[]) {
 		}
 		return 0;
 	}
-
 
 	dev_dir = opendir(DEV_DIR);
 	if (!dev_dir) {
