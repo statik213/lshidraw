@@ -15,9 +15,10 @@ struct Args {
 	int verbose;
 	const char * path;
 	int rewind;
+	int sysfs;
 };
 
-static int runPoll(struct Args const * args) {
+static int runPoll(struct Args * args) {
 	unsigned int num = 0;
 	double start = getTimestamp();
 	double previous = start;
@@ -30,72 +31,94 @@ static int runPoll(struct Args const * args) {
 	}
 
 	p.fd = fd;
-	p.events = POLLPRI | POLLIN | POLLERR | POLLHUP;
+
+	if (args->sysfs) {
+		// sysfs is terrible and doesn't provide useful indication
+		// we can only watch for POLLPRI
+		p.events = POLLPRI;
+		args->rewind = 1;
+	} else {
+		p.events = POLLPRI | POLLIN | POLLERR | POLLHUP;
+	}
 
 	while (1) {
 		int rc;
-		char buffer[256];
+		int len;
+		double now;
+		char buffer[4096];
 
-		p.revents = 0;
-		rc = poll(&p, 1, 1000);
-		if (rc < 0) {
-			perror("error in poll");
-			close(fd);
-			return  -1;
+		if (num) { // skip poll on first
+			p.revents = 0;
+			rc = poll(&p, 1, 1000);
+			if (rc < 0) {
+				perror("error in poll");
+				close(fd);
+				return  -1;
+			}
+
+			if (rc == 0) {
+				printf(".");
+				fflush(stdout);
+				continue;
+			}
+			printf("\r");
+
+			int quit = 0;
+			if (!args->sysfs && (p.revents & POLLERR)) {
+				quit = 1;
+				printf(" - POLLERR\n");
+			}
+
+			if (p.revents & POLLHUP) {
+				quit = 1;
+				printf(" - POLLHUP\n");
+			}
+
+			if (quit) {
+				close(fd);
+				return 0;
+			}
 		}
 
-		if (rc == 0) {
-			printf(".");
-			fflush(stdout);
-			continue;
-		}
-		printf("\r");
 
-		double now = getTimestamp();
-		int i;
-
-		int len = read(fd, buffer, sizeof(buffer));
-		if (len < 0) {
-			perror(args->path);
-			close(fd);
-			return -1;
-		}
-
-		int quit = 0;
-		if (p.revents & POLLERR) {
-			quit = 0;
-			printf(" - POLLERR\n");
-		}
-
-		if (p.revents & POLLHUP) {
-			quit = 1;
-			printf(" - HUP\n");
-		}
-
-		if (quit) {
-			close(fd);
-			return 0;
+		if (num == 0 || p.revents & (POLLIN | POLLPRI)) {
+			now = getTimestamp();
+			len = read(fd, buffer, sizeof(buffer));
+			if (len < 0) {
+				perror(args->path);
+				close(fd);
+				return -1;
+			}
 		}
 
 		const char p = (p & POLLPRI) ? '*' : ' ';
-
 		num++;
+		if (num > 5) return 0;
+
+		if (len == 0 && args->rewind) {
+			rc = lseek(fd, 0, SEEK_SET);
+			if (rc < 0) {
+				perror("seek back failed");
+				return -1;
+			}
+			continue;
+		}
 
 		printf("#%-5d t: %5.3f dt: %5.4f len: %2d %c", num, now - start, now - previous, len, p);
-
 		if (len == 0) {
-			if (args->rewind) {
-				rc = lseek(fd, 0, SEEK_SET);
-				if (rc < 0) {
-					perror("cannot seek back");
-					return -1;
-				}
-			}
 			printf(" - EOF\n");
 		} else if (len <= 16) {
 			hex_dump(buffer, len, 0, " | ", "");
 		} else {
 			hex_dump(buffer, len, 1, "\n    >>> ", "    ... ");
+		}
+
+		if (args->sysfs) {
+			rc = lseek(fd, 0, SEEK_SET);
+			if (rc < 0) {
+				perror("seek back failed");
+				return -1;
+			}
 		}
 
 		previous = now;
@@ -110,16 +133,21 @@ int main(int argc, char* argv[]) {
 	struct Args args = {
 		.verbose = 0,
 		.path = NULL,
-		.rewind = 0
+		.rewind = 0,
+		.sysfs = 0
 	};
-	while ((c = getopt(argc, argv, "dvh")) != -1) {
+	while ((c = getopt(argc, argv, "dvhs")) != -1) {
 		switch (c) {
 			case 'h':
 				showUsage = 1;
 				break;
 
-			case 'r':
-				args.rewind = 1;
+			// case 'r':
+			// 	args.rewind = 1;
+			// 	break;
+
+			case 's':
+				args.sysfs = 1;
 				break;
 
 			case 'v':
@@ -150,6 +178,8 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	printf("path: %s", args.path);
-	runPoll(&args);
+	if (args.verbose) {
+		printf("Polling file: %s\n", args.path);
+	}
+	return runPoll(&args);
 }
